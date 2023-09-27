@@ -1,21 +1,23 @@
-use crate::{token::Token, token_type::TokenType, };
+use crate::{error::ErrorReporter, token::Token, token_type::TokenType};
 
-pub struct Scanner {
+pub struct Scanner<'a> {
     source: String,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: usize,
+    er: &'a mut ErrorReporter,
 }
 
-impl Scanner {
-    pub fn new(source: String) -> Self {
+impl<'a> Scanner<'a> {
+    pub fn new(source: String, er: &'a mut ErrorReporter) -> Self {
         Self {
             source,
             tokens: vec![],
             start: 0,
             current: 0,
             line: 1,
+            er,
         }
     }
 
@@ -28,7 +30,6 @@ impl Scanner {
         self.tokens.push(Token {
             type_: TokenType::Eof,
             lexeme: "".to_owned(),
-            literal: (),
             line: self.line,
         });
         self.tokens
@@ -83,8 +84,9 @@ impl Scanner {
 
             _ if is_alpha(c) => self.identifier(),
 
-            // _ => Lox::error(self.line, "Unexpected character."), // todo: global state: how?
-            _ => panic!("Unexpected character {c:?}"),
+            _ => self
+                .er
+                .error(self.line, &format!("Unexpected character: {c:?}")),
         }
     }
 
@@ -128,10 +130,17 @@ impl Scanner {
             }
         }
 
-        // todo: this could fail depending on length ...
-        let _value: f64 = self.source[self.start..self.current].parse().unwrap();
+        let value: f64 = match self.source[self.start..self.current].parse() {
+            Ok(x) => x,
+            Err(e) => {
+                // This could fail if the string of digits is too long, e.g.
+                self.er
+                    .error(self.line, &format!("Failed to parse number: {e}"));
+                return;
+            }
+        };
 
-        self.add_token_literal(TokenType::Number, Some(())); // value); // todo
+        self.add_token(TokenType::Number(value));
     }
 
     fn string(&mut self) {
@@ -143,15 +152,14 @@ impl Scanner {
         }
 
         if self.eof() {
-            // Lox::error(self.line, "Unterminated string."); // todo
-            // return;
-            panic!("Unterminated string.");
+            self.er.error(self.line, "Unterminated string.");
+            return;
         }
 
         self.advance(); // Consume closing "
 
-        // let value = self.source[self.start + 1..self.current - 1].to_owned();
-        self.add_token_literal(TokenType::String, Some(())); // value); // todo
+        let value = self.source[self.start + 1..self.current - 1].to_owned();
+        self.add_token(TokenType::String(value));
     }
 
     fn match_(&mut self, expected: char) -> bool {
@@ -187,15 +195,10 @@ impl Scanner {
     }
 
     fn add_token(&mut self, type_: TokenType) {
-        self.add_token_literal(type_, None);
-    }
-
-    fn add_token_literal(&mut self, type_: TokenType, literal: Option<()>) {
         let text = self.source[self.start..self.current].to_owned();
         self.tokens.push(Token {
             type_,
             lexeme: text,
-            literal: literal.unwrap_or(()), // todo
             line: self.line,
         });
     }
