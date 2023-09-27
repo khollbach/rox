@@ -1,10 +1,18 @@
-mod token_type;
 mod token;
+mod token_type;
+mod scanner;
 
-use std::{env, process, fs::{File, self}, io::{self, Write}};
+use std::{
+    env, fs,
+    io::{self, Write},
+    path::Path,
+    process,
+};
 
-fn main() {
-    Lox::new().main();
+use scanner::Scanner;
+
+fn main() -> io::Result<()> {
+    Lox::new().main()
 }
 
 struct Lox {
@@ -16,7 +24,7 @@ impl Lox {
         Self { had_error: false }
     }
 
-    fn main(mut self) {
+    fn main(mut self) -> io::Result<()> {
         let mut args = env::args().skip(1);
         match args.len() {
             0 => self.run_prompt(),
@@ -36,24 +44,26 @@ impl Lox {
 
             let Some(line) = lines.next() else {
                 return Ok(());
-            } 
+            };
 
-            self.run(line?);
+            self.run(&line?);
             self.had_error = false;
         }
     }
 
     fn run_file(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
-        let contents = fs::read_to_string(path)?
+        let contents = fs::read_to_string(path)?;
         self.run(&contents);
 
         if self.had_error {
             process::exit(65);
         }
+
+        Ok(())
     }
 
-    fn run(&mut self, source: &str) {
-        let scanner = Scanner::new(source);
+    fn run(&mut self, source: impl Into<String>) {
+        let scanner = Scanner::new(source.into());
         let tokens = scanner.scan_tokens();
 
         for t in tokens {
@@ -62,7 +72,7 @@ impl Lox {
     }
 
     fn error(&mut self, line: usize, message: &str) {
-        report(line, "", message);
+        self.report(line, "", message);
     }
 
     fn report(&mut self, line: usize, where_: &str, message: &str) {
